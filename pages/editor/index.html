@@ -808,6 +808,10 @@ async function doImport() {
         $("import-tip").className = "hint";
         setStatus("导入完成，共 " + data.imported + " 个", "ok");
       }
+    } else if (data.error) {
+      $("import-tip").textContent = "导入失败：" + data.error;
+      $("import-tip").className = "hint err";
+      setStatus("导入失败", "err");
     }
     $("import-confirm").textContent = "关闭";
     $("import-confirm").disabled = false;
