@@ -691,11 +691,13 @@ function updateImportFooter() {
     : "导入";
   const overlap = state.importRows.filter(
     (row) => !rowError(row) && state.existing.has(String(row.targetId).trim()));
+  const allBad = state.importRows.length > 0 && state.importRows.every((row) => rowError(row));
   const tip = $("import-tip");
   if (!state.importRows.length) tip.textContent = "文件里没读到人格。";
+  else if (allBad) tip.textContent = "文件里没有能导入的人格，看看上面标红的原因。";
   else if (overlap.length) tip.textContent = "有 " + overlap.length + " 个名字已经存在，默认选「覆盖」；要保留原来的就改成「跳过」。";
   else tip.textContent = "将新建 " + count.create + " 个人格。";
-  tip.className = "hint" + (overlap.length ? " warn" : "");
+  tip.className = "hint" + (allBad ? " err" : overlap.length ? " warn" : "");
 }
 
 function rowNote(row) {
