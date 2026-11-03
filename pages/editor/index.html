@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>人格设定编辑器</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: #14161a; color: #e6e8eb; overflow: hidden;
+         font: 13px/1.5 system-ui, "Microsoft YaHei", sans-serif; display: flex; flex-direction: column; }
+
+  .topbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+            border-bottom: 1px solid #232830; background: #14161a; }
+  select, textarea, button, input { background: #1d222a; color: #e6e8eb;
+            border: 1px solid #333b46; border-radius: 6px; font: inherit; }
+  select { padding: 5px 8px; min-width: 170px; }
+  button { padding: 5px 10px; cursor: pointer; }
+  button:hover { background: #262d37; }
+  button.primary { background: #3b6ea5; border-color: #4a80bb; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .status { font-size: 12px; color: #8b929c; }
+  .status.dirty { color: #e8b04b; }
+  .status.ok { color: #6fcf97; }
+  .status.err { color: #ff7b7b; }
+
+  .layout { flex: 1; display: flex; min-height: 0; }
+  .left, .right { min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+  .left { width: 40%; }
+  .right { width: 60%; }
+  .left { border-right: 1px solid #232830; padding: 10px 12px; }
+  .right { padding: 10px 12px; }
+
+  .section { margin-bottom: 10px; }
+  .section > summary { cursor: pointer; font-weight: 600; padding: 4px 0; color: #cfd6de;
+            list-style: none; user-select: none; }
+  .section > summary::-webkit-details-marker { display: none; }
+  .section > summary::before { content: "▸ "; color: #6f7885; }
+  .section[open] > summary::before { content: "▾ "; }
+
+  #prompt { width: 100%; height: 360px; min-height: 100px; resize: vertical; overflow-y: auto;
+            padding: 8px; margin-top: 4px; font-size: 12px; }
+  #errmsg { width: 100%; height: 76px; resize: none; overflow-y: auto;
+            padding: 8px; margin-top: 4px; font-size: 12px; }
+  .meta { color: #6f7885; font-size: 11px; font-weight: 400; }
+
+  .pair { border: 1px solid #2b313a; border-radius: 7px; padding: 5px 6px 6px;
+          margin-bottom: 7px; background: #171b21; }
+  .pair.dragging { opacity: .5; pointer-events: none; }
+  body.grabbing, body.grabbing * { cursor: grabbing !important; user-select: none !important; }
+  .prow { display: flex; align-items: center; gap: 6px; height: 20px; margin-bottom: 4px; }
+  .drag { cursor: grab; color: #6f7885; font-size: 14px; padding: 0 2px; user-select: none; touch-action: none; }
+  .drag:active { cursor: grabbing; }
+  .no { color: #6f7885; font-size: 11px; white-space: nowrap; }
+  .chip { font-size: 11px; color: #9aa3ad; }
+  .spacer { flex: 1; }
+  .icon { width: 22px; height: 20px; padding: 0; font-size: 12px; line-height: 1;
+          display: inline-flex; align-items: center; justify-content: center; }
+  .icon.danger { color: #ff9a9a; }
+  .pair textarea { width: 100%; padding: 6px 7px; font-size: 12px; resize: vertical;
+          display: block; }
+  .pair textarea.u { height: 80px; min-height: 52px; }
+  .pair textarea.a { height: 100px; min-height: 66px; margin-top: 4px; }
+
+  .toolitem { display: flex; align-items: center; gap: 8px; color: #cfd6de; padding: 2px 0; }
+  .toolitem span { overflow-wrap: anywhere; flex: 1; }
+  .group-title { margin-top: 8px; color: #9aa3ad; font-weight: 600; overflow-wrap: anywhere; }
+  .load-error { color: #ff7b7b; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .empty { color: #6f7885; padding: 12px 0; }
+
+  .mask { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center;
+          justify-content: center; padding: 16px; background: rgba(8, 10, 13, .74); }
+  .mask[hidden] { display: none; }
+  .dialog { width: min(720px, 100%); max-height: min(84vh, 760px); display: flex;
+            flex-direction: column; background: #171b21; border: 1px solid #2b313a;
+            border-radius: 8px; }
+  .dialog > header { flex: none; display: flex; align-items: center; gap: 8px;
+            padding: 9px 12px; border-bottom: 1px solid #232830; font-weight: 600; }
+  .dialog > .body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; }
+  .dialog > footer { flex: none; display: flex; align-items: center; gap: 8px;
+            padding: 9px 12px; border-top: 1px solid #232830; }
+  .hint { color: #8b929c; font-size: 12px; padding: 4px 0; display: flex; align-items: center; gap: 6px; }
+  .hint.warn { color: #e8b04b; }
+  .hint.err { color: #ff7b7b; }
+  .irow { display: flex; align-items: center; gap: 8px; padding: 7px 0;
+          border-bottom: 1px solid #222831; }
+  .irow:last-child { border-bottom: 0; }
+  .irow input[type=text] { flex: 1; min-width: 0; padding: 4px 7px; font-size: 12px; }
+  .irow select { min-width: 92px; padding: 4px 6px; font-size: 12px; }
+  .irow.err input[type=text] { border-color: #7d3a3a; }
+  .irow .note { color: #6f7885; font-size: 11px; white-space: nowrap; }
+  .irow .note.warn { color: #e8b04b; }
+  .irow .note.ok { color: #6fcf97; }
+  .irow .note.bad { color: #ff7b7b; }
+
+  @media (max-width: 600px) {
+    .topbar { flex-wrap: wrap; }
+    .topbar select { min-width: 0; max-width: 100%; }
+    .left { padding: 8px; }
+    .right { padding: 8px; }
+    .irow { flex-wrap: wrap; }
+    .irow input[type=text] { flex-basis: 100%; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <select id="persona"><option value="">读不到人格</option></select>
+    <button id="reload">重新加载</button>
+    <button id="save" class="primary" disabled>保存</button>
+    <button id="add" title="在末尾新增一对" disabled>＋新对</button>
+    <button id="export" title="把当前这个人格整份存成文件（含工具和技能）" disabled>导出</button>
+    <button id="export-all" title="把所有人格打包成一个文件">导出全部</button>
+    <button id="import" title="从文件导入人格设定">导入</button>
+    <span id="status" class="status">正在连接面板…</span>
+    <span class="spacer"></span>
+    <span id="stats" class="status"></span>
+  </div>
+
+  <div class="layout">
+    <aside class="left">
+      <details class="section" open>
+        <summary>系统提示词 <span class="meta" id="prompt-len"></span></summary>
+        <textarea id="prompt" spellcheck="false" placeholder="系统提示词"></textarea>
+      </details>
+      <details class="section" open>
+        <summary>自定义报错回复信息</summary>
+        <textarea id="errmsg" spellcheck="false" placeholder="出错时回复用户的那句话，留空用默认"></textarea>
+      </details>
+      <details class="section">
+        <summary>工具 <span class="meta" id="tools-meta"></span></summary>
+        <div id="tools"></div>
+      </details>
+      <details class="section">
+        <summary>技能 <span class="meta" id="skills-meta"></span></summary>
+        <div id="skills"></div>
+      </details>
+    </aside>
+
+    <main class="right">
+      <details class="section" open>
+        <summary>对话示例 <span class="meta" id="pairs-meta"></span></summary>
+        <div id="load-error" class="load-error" role="alert"></div>
+        <div id="pairs"></div>
+      </details>
+    </main>
+  </div>
+
+  <input id="file" type="file" accept=".json,application/json" hidden />
+
+  <div id="import-mask" class="mask" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-label="导入人格设定">
+      <header>导入人格设定 <span class="meta" id="import-src"></span></header>
+      <div class="body">
+        <label class="hint"><input type="checkbox" id="strip-imported" checked />
+          自动去掉导入后缀（结尾的 _imported、_imported_1）</label>
+        <div class="hint" id="import-tip"></div>
+        <div id="import-rows"></div>
+      </div>
+      <footer>
+        <button id="import-all-create">全部新建</button>
+        <button id="import-all-overwrite">全部覆盖</button>
+        <button id="import-all-skip">全部跳过</button>
+        <span class="spacer"></span>
+        <button id="import-cancel">取消</button>
+        <button id="import-confirm" class="primary" disabled>导入</button>
+      </footer>
+    </div>
+  </div>
+
+<script>
+const B = () => window.AstrBotPluginPage;
+const $ = (id) => document.getElementById(id);
+const state = { personaId: "", pairs: [], dirty: false, seq: 0,
+  revision: 0, choices: { tools: null, skills: null },
+  catalog: { tools: [], skills: [] }, catalogErrors: {},
+  folderId: null, sortOrder: 0, existing: new Set(),
+  importRows: [], importName: "", stripImport: true };
+
+function setStatus(text, cls) {
+  const el = $("status");
+  el.textContent = text;
+  el.className = "status" + (cls ? " " + cls : "");
+}
+function setDirty(v) { state.dirty = v; if (v) { state.revision++; setStatus("有未保存的改动", "dirty"); } }
+function showLoadError(err) {
+  const text = err instanceof Error ? err.message : String(err);
+  $("load-error").textContent = "读取失败：" + text;
+  setStatus("读取失败：" + text, "err");
+}
+
+function stats() {
+  const chars = state.pairs.reduce((n, p) => n + (p.user||"").length + (p.assistant||"").length, 0);
+  $("stats").textContent = "共 " + state.pairs.length + " 对 · " + chars + " 字";
+  $("pairs-meta").textContent = state.pairs.length + " 对";
+}
+
+function mk(tag, props, text) {
+  const n = document.createElement(tag);
+  Object.assign(n, props || {});
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function render() {
+  const box = $("pairs");
+  box.textContent = "";
+  if (!state.pairs.length) box.append(mk("div", { className: "empty" }, "这个人格还没有对话示例。"));
+  state.pairs.forEach((p, i) => {
+    if (!p.__k) p.__k = "k" + (++state.seq);
+
+    const card = mk("div", { className: "pair" });
+    card.dataset.k = p.__k;
+
+    const row = mk("div", { className: "prow" });
+    const handle = mk("span", { className: "drag", title: "按住拖动排序" }, "⠿");
+    bindDrag(handle, card);
+    const no = mk("span", { className: "no" }, (i + 1) + "/" + state.pairs.length);
+    const chipU = mk("span", { className: "chip" }, "用户");
+    const chipA = mk("span", { className: "chip" }, "助手");
+    const sp = mk("span", { className: "spacer" });
+
+    const btn = (glyph, title, fn, cls) => {
+      const b = mk("button", { className: "icon" + (cls ? " " + cls : ""), title }, glyph);
+      b.addEventListener("click", fn);
+      return b;
+    };
+    row.append(
+      handle, no, chipU, chipA, sp,
+      btn("↑+", "在上方插入一对", () => insertAt(i)),
+      btn("↓+", "在下方插入一对", () => insertAt(i + 1)),
+      btn("⧉", "复制这一对", () => copy(i)),
+      btn("✕", "删除这一对", () => remove(i), "danger")
+    );
+
+    const u = mk("textarea", { className: "u", placeholder: "用户说的话" });
+    u.value = p.user || "";
+    u.addEventListener("input", () => { p.user = u.value; setDirty(true); stats(); });
+
+    const a = mk("textarea", { className: "a", placeholder: "她的回话" });
+    a.value = p.assistant || "";
+    a.addEventListener("input", () => { p.assistant = a.value; setDirty(true); stats(); });
+
+    card.append(row, u, a);
+    box.append(card);
+  });
+  stats();
+}
+
+function insertAt(i) {
+  state.pairs.splice(i, 0, { user: "", assistant: "", __k: "k" + (++state.seq) });
+  setDirty(true);
+  render();
+}
+function copy(i) {
+  const src = state.pairs[i];
+  state.pairs.splice(i + 1, 0, { user: src.user, assistant: src.assistant, __k: "k" + (++state.seq) });
+  setDirty(true);
+  render();
+}
+function remove(i) {
+  if (!confirm("删掉第 " + (i + 1) + " 对？")) return;
+  state.pairs.splice(i, 1);
+  setDirty(true);
+  render();
+}
+
+function bindDrag(handle, card) {
+  let active = null;
+  const scroller = document.querySelector(".right");
+  const reorderAtPointer = () => {
+    const element = document.elementFromPoint(active.x, active.y);
+    const target = element && element.closest(".pair");
+    const container = $("pairs");
+    if (!target || target === card || target.parentElement !== container) return;
+    const next = card.nextSibling;
+    if (next === target) {
+      container.insertBefore(target, card);
+    } else {
+      container.insertBefore(card, target);
+      container.insertBefore(target, next);
+      handle.setPointerCapture(active.id);
+    }
+  };
+  const scrollSpeed = () => {
+    const rect = scroller.getBoundingClientRect();
+    if (active.x < rect.left || active.x > rect.right) return 0;
+    const top = active.y - rect.top;
+    const bottom = rect.bottom - active.y;
+    const distance = Math.min(top, bottom);
+    if (distance >= 70) return 0;
+    const direction = top < bottom ? -1 : 1;
+    if ((direction < 0 && scroller.scrollTop <= 0) ||
+        (direction > 0 && scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight)) return 0;
+    return direction * (3 + 15 * (1 - Math.max(0, distance) / 70));
+  };
+  const scrollFrame = () => {
+    active.frame = null;
+    const speed = scrollSpeed();
+    if (!speed) return;
+    const before = scroller.scrollTop;
+    scroller.scrollTop += speed;
+    if (scroller.scrollTop === before) return;
+    reorderAtPointer();
+    startScroll();
+  };
+  const startScroll = () => {
+    if (active && active.moved && active.frame === null && scrollSpeed()) {
+      active.frame = requestAnimationFrame(scrollFrame);
+    }
+  };
+  handle.addEventListener("pointerdown", (e) => {
+    if (active || !e.isPrimary || e.button !== 0) return;
+    active = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, frame: null };
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!active || e.pointerId !== active.id) return;
+    if (!active.moved) {
+      if (Math.hypot(e.clientX - active.x, e.clientY - active.y) <= 5) return;
+      active.moved = true;
+      card.classList.add("dragging");
+      document.body.classList.add("grabbing");
+    }
+    active.x = e.clientX;
+    active.y = e.clientY;
+    reorderAtPointer();
+    startScroll();
+  });
+  const finish = (e) => {
+    if (!active || e.pointerId !== active.id) return;
+    const moved = active.moved;
+    if (active.frame !== null) cancelAnimationFrame(active.frame);
+    active = null;
+    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+    card.classList.remove("dragging");
+    document.body.classList.remove("grabbing");
+    if (moved) reorderFromDom();
+  };
+  handle.addEventListener("pointerup", finish);
+  handle.addEventListener("pointercancel", finish);
+  handle.addEventListener("lostpointercapture", (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) finish(e);
+  });
+}
+
+function reorderFromDom() {
+  const order = Array.prototype.map.call(
+    $("pairs").querySelectorAll(".pair"), (el) => el.dataset.k);
+  const map = new Map(state.pairs.map((p) => [p.__k, p]));
+  const next = order.map((k) => map.get(k)).filter(Boolean);
+  if (next.length !== state.pairs.length) return;
+  state.pairs = next;
+  setDirty(true);
+  render();
+}
+
+function selectionNames(items, value) {
+  return new Set(value === null ? items.map((item) => item.name) : value);
+}
+
+function selectionValue(items, selected, previous) {
+  if (!items.length && !selected.size && previous === null) return null;
+  const names = new Set(items.map((item) => item.name));
+  if (!selected.size) return [];
+  if (names.size && selected.size === names.size && [...names].every((name) => selected.has(name))) return null;
+  return [...selected];
+}
+
+function renderList(field) {
+  const box = $(field), items = state.catalog[field], value = state.choices[field];
+  box.textContent = "";
+  if (state.catalogErrors[field]) {
+    $(field + "-meta").textContent = "目录不可用";
+    box.append(mk("div", { className: "load-error" }, state.catalogErrors[field]));
+    return;
+  }
+  const selected = selectionNames(items, value);
+  const known = new Set(items.map((item) => item.name));
+  const missing = [...selected].filter((name) => !known.has(name));
+  const groups = new Map();
+  for (const item of items) {
+    const source = item.source || "未知来源";
+    if (!groups.has(source)) groups.set(source, []);
+    groups.get(source).push(item);
+  }
+  if (missing.length) groups.set("已失效或不可用", missing.map((name) => ({ name, desc: "当前目录中找不到此项" })));
+  const totalSelected = items.filter((item) => selected.has(item.name)).length;
+  $(field + "-meta").textContent = "已选 " + totalSelected + "/" + items.length;
+  if (!groups.size) box.append(mk("div", { className: "empty" }, "暂无可用条目"));
+  for (const [source, group] of groups) {
+    const count = group.filter((item) => selected.has(item.name)).length;
+    box.append(mk("div", { className: "group-title" }, source + " · 已选 " + count + "/" + group.length));
+    for (const item of group) {
+      const label = mk("label", { className: "toolitem", title: item.desc || item.name });
+      const input = mk("input", { type: "checkbox", checked: selected.has(item.name) });
+      input.addEventListener("change", () => {
+        if (input.checked) selected.add(item.name);
+        else selected.delete(item.name);
+        state.choices[field] = selectionValue(items, selected, value);
+        setDirty(true);
+        renderList(field);
+      });
+      label.append(input, mk("span", {}, item.name));
+      box.append(label);
+    }
+  }
+}
+
+async function loadCatalog() {
+  try {
+    const data = await B().apiGet("editor/catalog");
+    state.catalogErrors = data.errors || {};
+    for (const field of ["tools", "skills"]) {
+      if (!Array.isArray(data[field]) || data[field].some((item) => !item || typeof item.name !== "string")) {
+        state.catalogErrors[field] = "目录数据格式不正确";
+        state.catalog[field] = [];
+      } else {
+        state.catalog[field] = data[field];
+        if (data.error && !data.errors) state.catalogErrors[field] = data.error;
+      }
+    }
+  } catch (err) {
+    const message = "目录读取失败：" + (err instanceof Error ? err.message : String(err));
+    state.catalogErrors = { tools: message, skills: message };
+    state.catalog = { tools: [], skills: [] };
+  }
+}
+
+async function loadPersona(pid) {
+  if (!pid) return;
+  setStatus("正在读取…");
+  document.querySelector(".layout").inert = true;
+  $("persona").disabled = $("reload").disabled = $("save").disabled = $("add").disabled = $("export").disabled = true;
+  try {
+    await loadCatalog();
+    const data = await B().apiGet("editor/get", { persona_id: pid });
+    if (data.error) throw new Error(data.error);
+    if (!Array.isArray(data.pairs)) throw new Error("对话示例格式不对");
+    for (const field of ["tools", "skills"]) {
+      if (data[field] !== null && (!Array.isArray(data[field]) || data[field].some((v) => typeof v !== "string"))) {
+        throw new Error((field === "tools" ? "工具" : "技能") + "格式不对");
+      }
+    }
+    state.personaId = pid;
+    state.folderId = data.folder_id || null;
+    state.sortOrder = Number(data.sort_order || 0) || 0;
+    state.pairs = data.pairs.map((p) => ({ user: p.user || "", assistant: p.assistant || "" }));
+    $("prompt").value = data.system_prompt || "";
+    $("errmsg").value = data.custom_error_message || "";
+    $("prompt-len").textContent = $("prompt").value.length + " 字";
+    for (const field of ["tools", "skills"]) {
+      state.choices[field] = data[field] === null ? null : data[field].slice();
+      renderList(field);
+    }
+    state.dirty = false;
+    render();
+    $("load-error").textContent = "";
+    setStatus("已加载 " + pid, "ok");
+  } catch (err) {
+    $("persona").value = state.personaId;
+    showLoadError(err);
+  } finally {
+    document.querySelector(".layout").inert = false;
+    $("persona").disabled = $("reload").disabled = false;
+    $("save").disabled = $("add").disabled = $("export").disabled = !state.personaId;
+  }
+}
+
+async function fetchPersonas() {
+  const data = await B().apiGet("editor/list");
+  if (data.error) throw new Error(data.error);
+  const rows = Array.isArray(data.personas) ? data.personas : [];
+  state.existing = new Set(rows.map((item) => item.persona_id));
+  return rows;
+}
+
+function fillPersonaOptions(rows, keep) {
+  const sel = $("persona");
+  sel.textContent = "";
+  for (const item of rows) {
+    const opt = document.createElement("option");
+    opt.value = item.persona_id;
+    opt.textContent = item.persona_id + "（" + item.pairs + " 对）";
+    sel.append(opt);
+  }
+  if (keep && rows.some((item) => item.persona_id === keep)) sel.value = keep;
+}
+
+async function loadList() {
+  setStatus("正在读取人格列表…");
+  try {
+    const rows = await fetchPersonas();
+    fillPersonaOptions(rows, null);
+    const sel = $("persona");
+    if (!sel.options.length) { showLoadError("没读到人格"); return; }
+    await loadPersona(sel.value);
+  } catch (err) {
+    showLoadError(err);
+  }
+}
+
+async function save() {
+  if (!state.personaId) return;
+  const bad = state.pairs.findIndex((p) => !(p.user || "").trim() || !(p.assistant || "").trim());
+  if (bad >= 0 && !confirm("第 " + (bad + 1) + " 对有空内容，仍然保存？")) return;
+  $("save").disabled = true;
+  $("persona").disabled = $("reload").disabled = true;
+  const revision = state.revision;
+  setStatus("正在保存…");
+  try {
+    const data = await B().apiPost("editor/save", {
+      persona_id: state.personaId,
+      system_prompt: $("prompt").value,
+      custom_error_message: $("errmsg").value,
+      tools: saveChoice("tools"),
+      skills: saveChoice("skills"),
+      pairs: state.pairs.map((p) => ({ user: p.user, assistant: p.assistant }))
+    });
+    if (data.ok && state.revision === revision) { state.dirty = false; setStatus("已保存，共 " + data.pairs + " 对", "ok"); }
+    else if (data.ok) { setStatus("保存完成，仍有未保存的改动", "dirty"); }
+    else setStatus("保存失败：" + (data.error || "未知原因"), "err");
+  } catch (err) {
+    setStatus("保存失败：" + err, "err");
+  } finally {
+    $("save").disabled = false;
+    $("persona").disabled = $("reload").disabled = false;
+  }
+}
+
+function saveChoice(field) {
+  const value = state.choices[field];
+  if (state.catalogErrors[field]) return value;
+  return selectionValue(state.catalog[field], selectionNames(state.catalog[field], value), value);
+}
+
+/* ------------------------------------------------------------------ 导出 */
+
+const FORMAT_ID = "astrbot-persona-full";
+const FORMAT_VERSION = 1;
+const PLUGIN_ID = "astrbot_plugin_persona_editor";
+const PLUGIN_VERSION = "1.1.0";
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+function stamp() {
+  const d = new Date();
+  return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + "-" +
+         pad2(d.getHours()) + pad2(d.getMinutes());
+}
+function safeName(text) {
+  const name = String(text || "").replace(/[\\/:*?"<>|\r\n\t]/g, "_").trim();
+  return name.slice(0, 80) || "persona";
+}
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2) + "\n"], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+function currentPayload() {
+  const dialogs = [];
+  for (const pair of state.pairs) { dialogs.push(pair.user || ""); dialogs.push(pair.assistant || ""); }
+  return {
+    persona_id: state.personaId,
+    system_prompt: $("prompt").value,
+    begin_dialogs: dialogs,
+    tools: saveChoice("tools"),
+    skills: saveChoice("skills"),
+    custom_error_message: $("errmsg").value,
+    folder_id: state.folderId,
+    sort_order: state.sortOrder
+  };
+}
+
+function exportOne() {
+  if (!state.personaId) return;
+  const payload = {
+    format: FORMAT_ID,
+    format_version: FORMAT_VERSION,
+    plugin: PLUGIN_ID,
+    plugin_version: PLUGIN_VERSION,
+    exported_at: new Date().toISOString(),
+    persona: currentPayload()
+  };
+  downloadJson("persona_" + safeName(state.personaId) + ".json", payload);
+  setStatus("已导出 " + state.personaId, "ok");
+}
+
+async function exportAll() {
+  $("export-all").disabled = true;
+  setStatus("正在打包…");
+  try {
+    const data = await B().apiGet("editor/export_all");
+    if (data.error) throw new Error(data.error);
+    if (!Array.isArray(data.personas)) throw new Error("全部导出格式不对");
+    downloadJson("persona_backup_" + stamp() + ".json", data);
+    setStatus("已导出全部 " + data.personas.length + " 个人格", "ok");
+  } catch (err) {
+    setStatus("导出失败：" + (err instanceof Error ? err.message : String(err)), "err");
+  } finally {
+    $("export-all").disabled = false;
+  }
+}
+
+/* ------------------------------------------------------------------ 导入 */
+
+const MODE_LABEL = { create: "新建", overwrite: "覆盖", skip: "跳过" };
+
+function stripImportSuffix(id) {
+  let text = String(id || "").trim();
+  for (let i = 0; i < 5; i++) {
+    const next = text.replace(/_imported(?:_\d+)?$/, "").trim();
+    if (!next || next === text) break;
+    text = next;
+  }
+  return text;
+}
+
+function extractPersonas(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object" && Array.isArray(raw.personas)) return raw.personas;
+  if (raw && typeof raw === "object" && raw.persona && typeof raw.persona === "object") return [raw.persona];
+  return [raw];
+}
+
+function promptOf(data) {
+  if (!data || typeof data !== "object") return null;
+  if (typeof data.system_prompt === "string") return data.system_prompt;
+  if (typeof data.prompt === "string") return data.prompt;
+  return null;
+}
+
+function rowError(row) {
+  if (!row.data || typeof row.data !== "object" || Array.isArray(row.data)) return "这一项不是人格数据";
+  if (promptOf(row.data) === null) return "缺少系统提示词";
+  const dialogs = Array.isArray(row.data.begin_dialogs) ? row.data.begin_dialogs : [];
+  if (dialogs.length % 2) return "对话示例是奇数条";
+  if (dialogs.some((item) => typeof item !== "string")) return "对话示例里有不是文本的内容";
+  if (!String(row.targetId || "").trim()) return "人格标识不能为空";
+  return "";
+}
+
+function buildImportRows(raw) {
+  const list = extractPersonas(raw);
+  state.importRows = list.map((data) => {
+    const sourceId = data && typeof data === "object" && !Array.isArray(data)
+      ? String(data.persona_id || data.name || "") : "";
+    const prompt = promptOf(data);
+    const dialogs = data && Array.isArray(data.begin_dialogs) ? data.begin_dialogs : [];
+    const row = {
+      data: data,
+      sourceId: sourceId,
+      targetId: state.stripImport ? stripImportSuffix(sourceId) : sourceId,
+      edited: false,
+      mode: "create",
+      pairs: Math.floor(dialogs.length / 2),
+      chars: (prompt || "").length
+    };
+    row.error = rowError(row);
+    if (!row.error) row.mode = state.existing.has(String(row.targetId).trim()) ? "overwrite" : "create";
+    return row;
+  });
+}
+
+function settleMode(row) {
+  if (rowError(row) || row.mode === "skip") return;
+  row.mode = state.existing.has(String(row.targetId).trim()) ? "overwrite" : "create";
+}
+
+function importSummary() {
+  const count = { create: 0, overwrite: 0, skip: 0 };
+  for (const row of state.importRows) {
+    if (rowError(row)) { count.skip++; continue; }
+    count[row.mode] = (count[row.mode] || 0) + 1;
+  }
+  return count;
+}
+
+function updateImportFooter() {
+  const count = importSummary();
+  const usable = count.create + count.overwrite;
+  $("import-confirm").disabled = !usable;
+  $("import-confirm").textContent = usable
+    ? "导入（新建 " + count.create + " · 覆盖 " + count.overwrite + (count.skip ? " · 跳过 " + count.skip : "") + "）"
+    : "导入";
+  const overlap = state.importRows.filter(
+    (row) => !rowError(row) && state.existing.has(String(row.targetId).trim()));
+  const tip = $("import-tip");
+  if (!state.importRows.length) tip.textContent = "文件里没读到人格。";
+  else if (overlap.length) tip.textContent = "有 " + overlap.length + " 个名字已经存在，默认选「覆盖」；要保留原来的就改成「跳过」。";
+  else tip.textContent = "将新建 " + count.create + " 个人格。";
+  tip.className = "hint" + (overlap.length ? " warn" : "");
+}
+
+function rowNote(row) {
+  const error = rowError(row);
+  if (error) return { text: error, cls: "note bad" };
+  if (state.existing.has(String(row.targetId).trim())) {
+    return { text: "已有同名 · " + row.pairs + " 对 · " + row.chars + " 字", cls: "note warn" };
+  }
+  return { text: row.pairs + " 对 · " + row.chars + " 字", cls: "note" };
+}
+
+function renderImportRows() {
+  const box = $("import-rows");
+  box.textContent = "";
+  state.importRows.forEach((row) => {
+    const line = mk("div", { className: "irow" });
+
+    const input = mk("input", { type: "text", value: row.targetId, spellcheck: false,
+                                placeholder: "人格标识" });
+    const noteEl = mk("span", { className: "note" });
+    const select = mk("select", {});
+    for (const mode of ["create", "overwrite", "skip"]) {
+      const opt = document.createElement("option");
+      opt.value = mode;
+      opt.textContent = MODE_LABEL[mode];
+      select.append(opt);
+    }
+
+    const paint = () => {
+      const note = rowNote(row);
+      noteEl.textContent = note.text;
+      noteEl.className = note.cls;
+      line.className = "irow" + (rowError(row) ? " err" : "");
+      select.value = row.mode;
+      select.disabled = Boolean(rowError(row));
+    };
+
+    input.addEventListener("input", () => {
+      row.targetId = input.value;
+      row.edited = true;
+      row.error = rowError(row);
+      settleMode(row);
+      paint();
+      updateImportFooter();
+    });
+    select.addEventListener("change", () => {
+      row.mode = select.value;
+      updateImportFooter();
+    });
+
+    paint();
+    line.append(input, noteEl, select);
+    box.append(line);
+  });
+  updateImportFooter();
+}
+
+function openImportDialog(name) {
+  state.importName = name || "";
+  $("import-src").textContent = state.importName;
+  $("strip-imported").checked = state.stripImport;
+  $("import-confirm").className = "primary";
+  $("import-confirm").textContent = "导入";
+  $("import-confirm").disabled = true;
+  renderImportRows();
+  $("import-mask").hidden = false;
+}
+
+function closeImportDialog() {
+  $("import-mask").hidden = true;
+  state.importRows = [];
+  $("file").value = "";
+}
+
+async function onFilePicked(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  let raw;
+  try {
+    raw = JSON.parse(await file.text());
+  } catch (err) {
+    setStatus("这个文件不是有效的设定文件", "err");
+    $("file").value = "";
+    return;
+  }
+  buildImportRows(raw);
+  openImportDialog(file.name);
+}
+
+async function doImport() {
+  const items = state.importRows
+    .filter((row) => !rowError(row) && row.mode !== "skip")
+    .map((row) => ({ data: row.data, persona_id: String(row.targetId).trim(), mode: row.mode }));
+  if (!items.length) return;
+  $("import-confirm").disabled = true;
+  $("import-confirm").textContent = "正在导入…";
+  try {
+    const data = await B().apiPost("editor/import", { strip_imported: false, items: items });
+    if (Array.isArray(data.results)) {
+      const failed = data.results.filter((row) => !row.ok);
+      if (failed.length) {
+        const text = failed.map((row) => (row.persona_id || "未命名") + "：" + (row.error || "未知原因")).join("；");
+        $("import-tip").textContent = "导入 " + data.imported + "/" + data.total + " 个，失败：" + text;
+        $("import-tip").className = "hint err";
+        setStatus("导入完成 " + data.imported + "/" + data.total + " 个", failed.length === data.total ? "err" : "ok");
+      } else {
+        $("import-tip").textContent = "导入完成，共 " + data.imported + " 个人格。";
+        $("import-tip").className = "hint";
+        setStatus("导入完成，共 " + data.imported + " 个", "ok");
+      }
+    }
+    $("import-confirm").textContent = "关闭";
+    $("import-confirm").disabled = false;
+    await refreshListOnly();
+    const touched = Array.isArray(data.results)
+      && data.results.some((row) => row.ok && row.persona_id === state.personaId && row.action === "overwrite");
+    if (touched) {
+      if (state.dirty) {
+        setStatus("导入完成；当前人格已被覆盖，重新加载才能看到新内容", "dirty");
+      } else {
+        await loadPersona(state.personaId);
+      }
+    }
+  } catch (err) {
+    $("import-tip").textContent = "导入失败：" + (err instanceof Error ? err.message : String(err));
+    $("import-tip").className = "hint err";
+    $("import-confirm").textContent = "重试";
+    $("import-confirm").disabled = false;
+    setStatus("导入失败", "err");
+  }
+}
+
+async function refreshListOnly() {
+  try {
+    const rows = await fetchPersonas();
+    fillPersonaOptions(rows, state.personaId || $("persona").value);
+    $("persona").disabled = false;
+  } catch (err) {
+    /* 列表刷新失败不影响已经导入的数据 */
+  }
+}
+
+function boot() {
+  $("persona").addEventListener("change", async (e) => {
+    if (state.dirty && !confirm("有未保存的改动，切换会丢掉，继续？")) {
+      e.target.value = state.personaId; return;
+    }
+    await loadPersona(e.target.value);
+  });
+  $("reload").addEventListener("click", async () => {
+    if (state.dirty && !confirm("有未保存的改动，重新加载会丢掉，继续？")) return;
+    if ($("persona").value) await loadPersona($("persona").value);
+    else await loadList();
+  });
+  $("save").addEventListener("click", save);
+  $("add").addEventListener("click", () => insertAt(state.pairs.length));
+  $("export").addEventListener("click", exportOne);
+  $("export-all").addEventListener("click", exportAll);
+
+  $("import").addEventListener("click", () => { $("file").value = ""; $("file").click(); });
+  $("file").addEventListener("change", onFilePicked);
+  $("import-cancel").addEventListener("click", closeImportDialog);
+  $("import-mask").addEventListener("click", (e) => { if (e.target === $("import-mask")) closeImportDialog(); });
+  $("import-all-create").addEventListener("click", () => {
+    for (const row of state.importRows) if (!rowError(row)) row.mode = "create";
+    renderImportRows();
+  });
+  $("import-all-overwrite").addEventListener("click", () => {
+    for (const row of state.importRows) if (!rowError(row)) row.mode = "overwrite";
+    renderImportRows();
+  });
+  $("import-all-skip").addEventListener("click", () => {
+    for (const row of state.importRows) if (!rowError(row)) row.mode = "skip";
+    renderImportRows();
+  });
+  $("strip-imported").addEventListener("change", (e) => {
+    state.stripImport = e.target.checked;
+    for (const row of state.importRows) {
+      if (row.edited) continue;
+      row.targetId = state.stripImport ? stripImportSuffix(row.sourceId) : row.sourceId;
+      row.error = rowError(row);
+      settleMode(row);
+    }
+    renderImportRows();
+  });
+  $("import-confirm").addEventListener("click", () => {
+    if ($("import-confirm").textContent === "关闭") { closeImportDialog(); return; }
+    doImport();
+  });
+
+  $("prompt").addEventListener("input", () => {
+    setDirty(true);
+    $("prompt-len").textContent = $("prompt").value.length + " 字";
+  });
+  $("errmsg").addEventListener("input", () => setDirty(true));
+  window.addEventListener("beforeunload", (e) => {
+    if (state.dirty) { e.preventDefault(); e.returnValue = ""; }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("import-mask").hidden) closeImportDialog();
+  });
+
+  const start = Date.now();
+  const timer = setInterval(() => {
+    if (B() && typeof B().apiGet === "function") { clearInterval(timer); loadList(); }
+    else if (Date.now() - start > 15000) {
+      clearInterval(timer);
+      showLoadError("等了十五秒，面板没把接口送过来");
+    }
+  }, 200);
+}
+
+boot();
+</script>
+</body>
+</html>
